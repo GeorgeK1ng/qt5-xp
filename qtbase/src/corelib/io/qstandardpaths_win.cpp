@@ -180,6 +180,10 @@ static GUID writableSpecialFolderId(QStandardPaths::StandardLocation type)
 // Convenience for SHGetKnownFolderPath().
 static QString sHGetKnownFolderPath(const GUID &clsid)
 {
+    // KF_FLAG_DONT_VERIFY is hidden by the Windows SDK when targeting XP,
+    // although SHGetKnownFolderPath accepts the flag on systems that provide
+    // the function (Vista and newer).
+    static const DWORD kfFlagDontVerify = 0x00004000;
     QString result;
     typedef HRESULT (WINAPI *GetKnownFolderPath)(const GUID&, DWORD, HANDLE, LPWSTR*);
 
@@ -187,7 +191,7 @@ static QString sHGetKnownFolderPath(const GUID &clsid)
         reinterpret_cast<GetKnownFolderPath>(QSystemLibrary::resolve(QLatin1String("shell32"), "SHGetKnownFolderPath"));
 
     LPWSTR path;
-    if (Q_LIKELY(sHGetKnownFolderPath && SUCCEEDED(sHGetKnownFolderPath(clsid, KF_FLAG_DONT_VERIFY, 0, &path)))) {
+    if (Q_LIKELY(sHGetKnownFolderPath && SUCCEEDED(sHGetKnownFolderPath(clsid, kfFlagDontVerify, 0, &path)))) {
         result = convertCharArray(path);
         CoTaskMemFree(path);
     }

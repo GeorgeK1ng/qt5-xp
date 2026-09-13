@@ -1,0 +1,94 @@
+name: Build Qt for Windows XP
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Windows XP ${{ matrix.name }}
+    runs-on: windows-2022
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: x86
+            vc_arch: x86
+          - name: x64
+            vc_arch: amd64
+
+    steps:
+      - name: Check out the sources
+        uses: actions/checkout@v4
+
+      - name: Install the Visual Studio 2017 XP toolchain
+        shell: powershell
+        run: |
+          choco install visualstudio2017buildtools --yes --no-progress `
+            --package-parameters "--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --includeOptional --passive --locale en-US"
+
+      - name: Build and install QtBase and QtSvg
+        shell: cmd
+        run: |
+          call "%ProgramFiles(x86)%\Microsoft Visual Studio\2017\BuildTools\VC\Auxiliary\Build\vcvarsall.bat" ${{ matrix.vc_arch }} -vcvars_ver=14.16
+          if errorlevel 1 exit /b 1
+          set "CL=/D_WIN32_WINNT=0x0501 /DWINVER=0x0501 /MP"
+          mkdir build\qtbase
+          cd build\qtbase
+          ..\..\qtbase\configure.bat -prefix "%GITHUB_WORKSPACE%\install" -opensource -confirm-license -release -shared -nomake tests -nomake examples -no-openssl -no-icu -no-dbus -no-feature-vulkan -opengl desktop
+          if errorlevel 1 exit /b 1
+          nmake
+          if errorlevel 1 exit /b 1
+          nmake install
+          if errorlevel 1 exit /b 1
+          cd "%GITHUB_WORKSPACE%"
+          mkdir build\qtsvg
+          cd build\qtsvg
+          "%GITHUB_WORKSPACE%\install\bin\qmake.exe" "%GITHUB_WORKSPACE%\qtsvg\qtsvg.pro" CONFIG+=release
+          if errorlevel 1 exit /b 1
+          nmake
+          if errorlevel 1 exit /b 1
+          nmake install
+
+      - name: Collect and verify the runtime
+        shell: powershell
+        run: |
+          $destination = Join-Path $env:GITHUB_WORKSPACE "artifact"
+          New-Item -ItemType Directory -Force $destination | Out-Null
+
+          $required = @(
+            "Qt5Core.dll",
+            "Qt5Gui.dll",
+            "Qt5Network.dll",
+            "Qt5Svg.dll",
+            "Qt5Widgets.dll",
+            "Qt5Xml.dll"
+          )
+          foreach ($dll in $required) {
+            $source = Join-Path $env:GITHUB_WORKSPACE "install\bin\$dll"
+            if (-not (Test-Path $source)) {
+              throw "Required runtime library was not built: $dll"
+            }
+            Copy-Item $source $destination
+          }
+
+          # GUI applications also need the Windows QPA platform plugin at runtime.
+          $platforms = Join-Path $destination "platforms"
+          New-Item -ItemType Directory -Force $platforms | Out-Null
+          Copy-Item "$env:GITHUB_WORKSPACE\install\plugins\platforms\qwindows.dll" $platforms
+
+      - name: Upload Qt runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: qt-5.15-xp-${{ matrix.name }}
+          path: artifact
+          if-no-files-found: error
+          retention-days: 14

@@ -965,6 +965,10 @@ void QConfFileSettingsPrivate::initAccess()
 #if defined(Q_OS_WIN) && !defined(Q_OS_WINRT)
 static QString windowsConfigPath(const KNOWNFOLDERID &type)
 {
+    // KF_FLAG_DONT_VERIFY is hidden by the Windows SDK when targeting XP,
+    // although SHGetKnownFolderPath accepts the flag on systems that provide
+    // the function (Vista and newer).
+    static const DWORD kfFlagDontVerify = 0x00004000;
     QString result;
 
     typedef HRESULT (WINAPI *GetKnownFolderPath)(const GUID&, DWORD, HANDLE, LPWSTR*);
@@ -973,7 +977,7 @@ static QString windowsConfigPath(const KNOWNFOLDERID &type)
         sHGetKnownFolderPath = reinterpret_cast<GetKnownFolderPath>(QSystemLibrary::resolve(QLatin1String("shell32"), "SHGetKnownFolderPath"));
 
     PWSTR path = nullptr;
-    if (sHGetKnownFolderPath && sHGetKnownFolderPath(type, KF_FLAG_DONT_VERIFY, NULL, &path) == S_OK) {
+    if (sHGetKnownFolderPath && sHGetKnownFolderPath(type, kfFlagDontVerify, NULL, &path) == S_OK) {
         result = QString::fromWCharArray(path);
         CoTaskMemFree(path);
     }
